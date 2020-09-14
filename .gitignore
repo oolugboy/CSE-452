@@ -1,0 +1,3 @@
+src/mapreduce/mrtmp.*
+.idea
+/src/main/diff.out*

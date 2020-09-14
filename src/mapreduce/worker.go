@@ -7,7 +7,7 @@ import "net/rpc"
 import "net"
 import "container/list"
 
-// Worker is a server waiting for DoJob or Shutdown RPCs
+// WorkerDomainSocketName is a server waiting for DoJob or Shutdown RPCs
 
 type Worker struct {
 	name   string
@@ -47,19 +47,22 @@ func (wk *Worker) Shutdown(args *ShutdownArgs, res *ShutdownReply) error {
 // Tell the master we exist and ready to work
 func Register(master string, me string) {
 	args := &RegisterArgs{}
-	args.Worker = me
+	args.WorkerDomainSocketName = me
 	var reply RegisterReply
-	ok := call(master, "MapReduce.Register", args, &reply)
+	ok := rpcCall(master, "MapReduce.RegisterWorker", args, &reply)
 	if ok == false {
-		fmt.Printf("Register: RPC %s register error\n", master)
+		fmt.Printf("RegisterWorker: RPC %s register error\n", master)
 	}
 }
 
 // Set up a connection with the master, register with the master,
 // and wait for jobs from the master
-func RunWorker(MasterAddress string, me string,
+func RunWorker(
+	MasterAddress string,
+	me string,
 	MapFunc func(string) *list.List,
-	ReduceFunc func(string, *list.List) string, nRPC int) {
+	ReduceFunc func(string, *list.List) string,
+	nRPC int) {
 	DPrintf("RunWorker %s\n", me)
 	wk := new(Worker)
 	wk.name = me

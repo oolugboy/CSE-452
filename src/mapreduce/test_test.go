@@ -40,7 +40,7 @@ func ReduceFunc(key string, values *list.List) string {
 	return ""
 }
 
-// Checks input file agaist output file: each input number should show up
+// Checks input file against output file: each input number should show up
 // in the output file in string sorted order
 func check(t *testing.T, file string) {
 	input, err := os.Open(file)
@@ -82,7 +82,7 @@ func check(t *testing.T, file string) {
 	}
 }
 
-// Workers report back how many RPCs they have processed in the Shutdown reply.
+// WorkerInfoMap report back how many RPCs they have processed in the Shutdown reply.
 // Check that they processed at least 1 RPC.
 func checkWorker(t *testing.T, l *list.List) {
 	for e := l.Front(); e != nil; e = e.Next() {

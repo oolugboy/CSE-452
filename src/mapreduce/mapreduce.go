@@ -34,7 +34,7 @@ import "hash/fnv"
 // which Merge() merges into a single output.
 
 // Debugging
-const Debug = 0
+const Debug = 1
 
 func DPrintf(format string, a ...interface{}) (n int, err error) {
 	if Debug > 0 {
@@ -50,18 +50,20 @@ type KeyValue struct {
 }
 
 type MapReduce struct {
-	nMap            int    // Number of Map jobs
-	nReduce         int    // Number of Reduce jobs
-	file            string // Name of input file
-	MasterAddress   string
-	registerChannel chan string
-	DoneChannel     chan bool
-	alive           bool
-	l               net.Listener
-	stats           *list.List
+	nMap                      int    // Number of Map jobs
+	nReduce                   int    // Number of Reduce jobs
+	file                      string // Name of input file
+	MasterAddress             string
+	workerRegistrationChannel chan string
+	DoneChannel               chan bool
+	alive                     bool
+	networkListener           net.Listener
+	stats                     *list.List
 
 	// Map of registered workers that you need to keep up to date
-	Workers map[string]*WorkerInfo
+	WorkerInfoMap map[string]*WorkerInfo
+	// Slice of registered workers that might be more efficient
+	WorkerInfoArray []*WorkerInfo
 
 	// add any additional state here
 }
@@ -73,8 +75,9 @@ func InitMapReduce(nmap int, nreduce int, file string, master string) *MapReduce
 	mr.file = file
 	mr.MasterAddress = master
 	mr.alive = true
-	mr.registerChannel = make(chan string)
+	mr.workerRegistrationChannel = make(chan string)
 	mr.DoneChannel = make(chan bool)
+	mr.WorkerInfoArray = make([]*WorkerInfo, 0)
 
 	// initialize any additional state here
 	return mr
@@ -88,10 +91,10 @@ func MakeMapReduce(nmap int, nreduce int, file string, master string) *MapReduce
 }
 
 // Register the worker to an RPC channel for the most likely reason being to signify
-// availability in the ditributed system to accept work
-func (mr *MapReduce) Register(args *RegisterArgs, res *RegisterReply) error {
-	DPrintf("Register: worker %s\n", args.Worker)
-	mr.registerChannel <- args.Worker
+// availability in the distributed system to accept work
+func (mr *MapReduce) RegisterWorker(args *RegisterArgs, res *RegisterReply) error {
+	DPrintf("Registering Worker: worker %s\n", args.WorkerDomainSocketName)
+	mr.workerRegistrationChannel <- args.WorkerDomainSocketName
 	res.OK = true
 	return nil
 }
@@ -99,32 +102,32 @@ func (mr *MapReduce) Register(args *RegisterArgs, res *RegisterReply) error {
 func (mr *MapReduce) Shutdown(args *ShutdownArgs, res *ShutdownReply) error {
 	DPrintf("Shutdown: registration server\n")
 	mr.alive = false
-	mr.l.Close() // causes the Accept to fail
+	mr.networkListener.Close() // causes the Accept to fail
 	return nil
 }
 
 func (mr *MapReduce) StartRegistrationServer() {
-	rpcs := rpc.NewServer()
-	rpcs.Register(mr)
+	rpcServer := rpc.NewServer()
+	rpcServer.Register(mr)
 	os.Remove(mr.MasterAddress) // only needed for "unix"
-	l, e := net.Listen("unix", mr.MasterAddress)
+	listener, e := net.Listen("unix", mr.MasterAddress)
 	if e != nil {
-		log.Fatal("RegstrationServer", mr.MasterAddress, " error: ", e)
+		log.Fatal("RegistrationServer", mr.MasterAddress, " error: ", e)
 	}
-	mr.l = l
+	mr.networkListener = listener
 
 	// now that we are listening on the master address, can fork off
 	// accepting connections to another thread.
 	go func() {
 		for mr.alive {
-			conn, err := mr.l.Accept()
+			conn, err := mr.networkListener.Accept()
 			if err == nil {
 				go func() {
-					rpcs.ServeConn(conn)
+					rpcServer.ServeConn(conn)
 					conn.Close()
 				}()
 			} else {
-				DPrintf("RegistrationServer: accept error", err)
+				DPrintf("RegistrationServer: accept error %s", err)
 				break
 			}
 		}
@@ -188,7 +191,7 @@ func hash(s string) uint32 {
 	return h.Sum32()
 }
 
-// Read split for job, call Map for that split, and create nreduce
+// Read split for job, rpcCall Map for that split, and create nreduce
 // partitions.
 func DoMap(JobNumber int, fileName string, nreduce int, Map func(string) *list.List) {
 	name := MapName(fileName, JobNumber)
@@ -233,7 +236,7 @@ func MergeName(fileName string, ReduceJob int) string {
 	return "mrtmp." + fileName + "-res-" + strconv.Itoa(ReduceJob)
 }
 
-// Read map outputs for partition job, sort them by key, call reduce for each
+// Read map outputs for partition job, sort them by key, rpcCall reduce for each
 // key
 func DoReduce(job int, fileName string, nmap int, Reduce func(string, *list.List) string) {
 	kvs := make(map[string]*list.List)
@@ -354,7 +357,7 @@ func RunSingle(nMap int, nReduce int, file string, Map func(string) *list.List,	
 func (mr *MapReduce) CleanupRegistration() {
 	args := &ShutdownArgs{}
 	var reply ShutdownReply
-	ok := call(mr.MasterAddress, "MapReduce.Shutdown", args, &reply)
+	ok := rpcCall(mr.MasterAddress, "MapReduce.Shutdown", args, &reply)
 	if ok == false {
 		fmt.Printf("Cleanup: RPC %s error\n", mr.MasterAddress)
 	}

@@ -33,7 +33,7 @@ type ShutdownReply struct {
 }
 
 type RegisterArgs struct {
-	Worker string
+	WorkerDomainSocketName string
 }
 
 type RegisterReply struct {
@@ -41,30 +41,28 @@ type RegisterReply struct {
 }
 
 //
-// call() sends an RPC to the rpcname handler on server srv
-// with arguments args, waits for the reply, and leaves the
-// reply in reply. the reply argument should be the address
-// of a reply structure.
+// rpcCall() sends an RPC to the rpcRequestHandlerName handler on server srv
+// with arguments args, waits for the reply, and leaves the// reply in reply.
+// the reply argument should be the address of a reply structure.
 //
-// call() returns true if the server responded, and false
-// if call() was not able to contact the server. in particular,
-// reply's contents are valid if and only if call() returned true.
+// rpcCall() returns true if the server responded, and false
+// if rpcCall() was not able to contact the server. in particular,
+// reply's contents are valid if and only if rpcCall() returned true.
 //
-// you should assume that call() will time out and return an
+// you should assume that rpcCall() will time out and return an
 // error after a while if it doesn't get a reply from the server.
 //
-// please use call() to send all RPCs, in master.go, mapreduce.go,
+// please use rpcCall() to send all RPCs, in master.go, mapreduce.go,
 // and worker.go.  please don't change this function.
 //
-func call(srv string, rpcname string,
-	args interface{}, reply interface{}) bool {
-	c, errx := rpc.Dial("unix", srv)
+func rpcCall(remoteServerName string, remoteProcedureName string, args interface{}, reply interface{}) bool {
+	c, errx := rpc.Dial("unix", remoteServerName)
 	if errx != nil {
 		return false
 	}
 	defer c.Close()
 
-	err := c.Call(rpcname, args, reply)
+	err := c.Call(remoteProcedureName, args, reply)
 	if err == nil {
 		return true
 	}
