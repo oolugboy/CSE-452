@@ -6,6 +6,9 @@ import "fmt"
 type WorkerInfo struct {
 	address string
 	// You can add definitions here.
+	jobStarted bool
+	jobArgs DoJobArgs
+	jobReply DoJobReply
 }
 
 // Clean up all workers by sending a Shutdown RPC to each one of them Collect
@@ -26,23 +29,106 @@ func (mr *MapReduce) KillWorkers() *list.List {
 	return l
 }
 
+func (mr * MapReduce) ResetWorkerInfoJobArgs(workerInfo * WorkerInfo) {
+	(*workerInfo).jobStarted = false
+	(*workerInfo).jobReply = DoJobReply{
+		OK: false,
+	}
+}
+
+func (mr * MapReduce) SetJobArgs(workerInfo * WorkerInfo, jobNumber int, jobType JobType) {
+	if jobType == Map {
+		(*workerInfo).jobArgs = DoJobArgs{
+			mr.file,
+			Map,
+			jobNumber,
+			mr.nReduce,
+		}
+	} else {
+		(*workerInfo).jobArgs = DoJobArgs{
+			mr.file,
+			Reduce,
+			jobNumber,
+			mr.nMap,
+		}
+	}
+}
+
+func (mr *MapReduce) SendJobToWorker(workerInfo * WorkerInfo) {
+	rpcCall(
+		workerInfo.address,
+		"Worker.DoJob",
+		&(*workerInfo).jobArgs,
+		&(*workerInfo).jobReply,
+		)
+}
+
 func (mr *MapReduce) RunMaster() *list.List {
-	// Execution Description
-	// The master should handle the registration of the workers
-	// The master should then orchestrate giving map and reduce jobs to workers that
-	// have registered in parallel
-	// We would not be handling worker failures yet.
-	// Your code here
-	// Step 1: handle the workers that have registered
-	// RegisterWorker gives the master the worker's Unix domain socket name on its own process
-	// The Master then reads the Registration channel and updates the WorkerInfo map
+	mapJobsCount := 0
+	mapJobsCompleted := 0
+	mapDone := false
+
+	reduceJobsCount := 0
+	reduceJobsCompleted := 0
+	reduceDone := false
 
 	for mr.alive {
 		select {
 		case workerSocketDomainName := <- mr.workerRegistrationChannel:
-			mr.WorkerInfoArray = append(mr.WorkerInfoArray, &WorkerInfo{ address: workerSocketDomainName })
+			mr.WorkerInfoArray = append(
+				mr.WorkerInfoArray,
+				&WorkerInfo{
+					address: workerSocketDomainName,
+					jobStarted: false,
+					jobArgs: DoJobArgs{},
+					jobReply: DoJobReply{},
+				})
 			fmt.Printf("Just added the worker %s to the WorkerArray \n", workerSocketDomainName)
 		default:
+		}
+
+		if mapDone == false {
+			for i := 0; i < len(mr.WorkerInfoArray); i++ {
+				currentWorkerInfo := mr.WorkerInfoArray[i]
+				if mapJobsCount < mr.nMap {
+					if (*currentWorkerInfo).jobStarted == false {
+						mr.SetJobArgs(currentWorkerInfo, i, Map)
+						go mr.SendJobToWorker(currentWorkerInfo)
+						mapJobsCount++
+					}
+				}
+				if (*currentWorkerInfo).jobReply.OK == true {
+					mapJobsCompleted++
+					mr.ResetWorkerInfoJobArgs(currentWorkerInfo)
+				}
+				if mapJobsCompleted == (mr.nMap - 1) {
+					mapDone = true
+				}
+			}
+		}
+
+		if mapDone && reduceDone == false {
+			for i := 0; i < len(mr.WorkerInfoArray); i++ {
+				currentWorkerInfo := mr.WorkerInfoArray[i]
+				if reduceJobsCount < mr.nReduce {
+					if (*currentWorkerInfo).jobStarted == false {
+						mr.SetJobArgs(currentWorkerInfo, i, Reduce)
+						go mr.SendJobToWorker(currentWorkerInfo)
+						reduceJobsCount++
+					}
+				}
+				if (*currentWorkerInfo).jobReply.OK == true {
+					reduceJobsCompleted++
+					mr.ResetWorkerInfoJobArgs(currentWorkerInfo)
+				}
+				if reduceJobsCompleted == (mr.nMap - 1) {
+					reduceDone = true
+				}
+			}
+		}
+
+		if reduceDone {
+			mr.alive = false
 		}
 	}
 
