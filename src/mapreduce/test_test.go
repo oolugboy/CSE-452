@@ -12,9 +12,9 @@ import "sort"
 import "strconv"
 
 const (
-	nNumber = 100  // TODO replace back with 100000
-	nMap    = 10   // TODO replace back with 100
-	nReduce = 5    // TODO replace back with 50
+	nNumber = 100000  // TODO replace back with 100000
+	nMap    = 100   // TODO replace back with 100
+	nReduce = 50    // TODO replace back with 50
 )
 
 // Create input file with N numbers
@@ -72,6 +72,7 @@ func check(t *testing.T, file string) {
 		if n == 1 && err == nil {
 			n, err = fmt.Sscanf(text, "%d", &v2)
 		}
+		//fmt.Printf("The v1 %d and the v2 %d \n", v1, v2)
 		if err != nil || v1 != v2 {
 			t.Fatalf("line %d: %d != %d err %v\n", i, v1, v2, err)
 		}

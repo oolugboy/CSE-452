@@ -31,36 +31,19 @@ func (mr *MapReduce) KillWorkers() *list.List {
 
 func (mr * MapReduce) ResetWorkerInfoJobArgs(workerInfo * WorkerInfo) {
 	(*workerInfo).jobStarted = false
-	(*workerInfo).jobReply = DoJobReply{
-		OK: false,
-	}
+	(*workerInfo).jobReply = DoJobReply{ OK: false	}
 }
 
 func (mr * MapReduce) SetJobArgs(workerInfo * WorkerInfo, jobNumber int, jobType JobType) {
 	if jobType == Map {
-		(*workerInfo).jobArgs = DoJobArgs{
-			mr.file,
-			Map,
-			jobNumber,
-			mr.nReduce,
-		}
+		(*workerInfo).jobArgs = DoJobArgs{mr.file,Map,jobNumber,mr.nReduce}
 	} else {
-		(*workerInfo).jobArgs = DoJobArgs{
-			mr.file,
-			Reduce,
-			jobNumber,
-			mr.nMap,
-		}
+		(*workerInfo).jobArgs = DoJobArgs{mr.file,Reduce,jobNumber,mr.nMap}
 	}
 }
 
 func (mr *MapReduce) SendJobToWorker(workerInfo * WorkerInfo) {
-	rpcCall(
-		workerInfo.address,
-		"Worker.DoJob",
-		&(*workerInfo).jobArgs,
-		&(*workerInfo).jobReply,
-		)
+	rpcCall(workerInfo.address,	"Worker.DoJob", &(*workerInfo).jobArgs, &(*workerInfo).jobReply)
 }
 
 func (mr *MapReduce) RunMaster() *list.List {
@@ -83,7 +66,6 @@ func (mr *MapReduce) RunMaster() *list.List {
 					jobArgs: DoJobArgs{},
 					jobReply: DoJobReply{},
 				})
-			fmt.Printf("Just added the worker %s to the WorkerArray \n", workerSocketDomainName)
 		default:
 		}
 
@@ -92,8 +74,9 @@ func (mr *MapReduce) RunMaster() *list.List {
 				currentWorkerInfo := mr.WorkerInfoArray[i]
 				if mapJobsCount < mr.nMap {
 					if (*currentWorkerInfo).jobStarted == false {
-						mr.SetJobArgs(currentWorkerInfo, i, Map)
+						mr.SetJobArgs(currentWorkerInfo, mapJobsCount, Map)
 						go mr.SendJobToWorker(currentWorkerInfo)
+						(*currentWorkerInfo).jobStarted = true
 						mapJobsCount++
 					}
 				}
@@ -101,19 +84,20 @@ func (mr *MapReduce) RunMaster() *list.List {
 					mapJobsCompleted++
 					mr.ResetWorkerInfoJobArgs(currentWorkerInfo)
 				}
-				if mapJobsCompleted == (mr.nMap - 1) {
+				if mapJobsCompleted == mr.nMap {
 					mapDone = true
 				}
 			}
 		}
 
-		if mapDone && reduceDone == false {
+		if mapDone == true && reduceDone == false {
 			for i := 0; i < len(mr.WorkerInfoArray); i++ {
 				currentWorkerInfo := mr.WorkerInfoArray[i]
 				if reduceJobsCount < mr.nReduce {
 					if (*currentWorkerInfo).jobStarted == false {
-						mr.SetJobArgs(currentWorkerInfo, i, Reduce)
+						mr.SetJobArgs(currentWorkerInfo, reduceJobsCount, Reduce)
 						go mr.SendJobToWorker(currentWorkerInfo)
+						(*currentWorkerInfo).jobStarted = true
 						reduceJobsCount++
 					}
 				}
@@ -121,7 +105,7 @@ func (mr *MapReduce) RunMaster() *list.List {
 					reduceJobsCompleted++
 					mr.ResetWorkerInfoJobArgs(currentWorkerInfo)
 				}
-				if reduceJobsCompleted == (mr.nMap - 1) {
+				if reduceJobsCompleted == mr.nReduce {
 					reduceDone = true
 				}
 			}
@@ -133,5 +117,4 @@ func (mr *MapReduce) RunMaster() *list.List {
 	}
 
 	return mr.KillWorkers()
-
 }
