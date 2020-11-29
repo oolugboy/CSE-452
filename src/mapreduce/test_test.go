@@ -1,8 +1,10 @@
 package mapreduce
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 import "fmt"
-import "time"
 import "container/list"
 import "strings"
 import "os"
@@ -12,9 +14,9 @@ import "sort"
 import "strconv"
 
 const (
-	nNumber = 100000  // TODO replace back with 100000
-	nMap    = 100   // TODO replace back with 100
-	nReduce = 50    // TODO replace back with 50
+	nNumber = 1000  // TODO replace back with 100000
+	nMap    = 10   // TODO replace back with 100
+	nReduce = 5    // TODO replace back with 50
 )
 
 // Create input file with N numbers
@@ -149,6 +151,7 @@ func TestBasic(t *testing.T) {
 	fmt.Printf("  ... Basic Passed\n")
 }
 
+
 func TestOneFailure(t *testing.T) {
 	fmt.Printf("Test: One Failure mapreduce ...\n")
 	mr := setup()
@@ -164,6 +167,7 @@ func TestOneFailure(t *testing.T) {
 	cleanup(mr)
 	fmt.Printf("  ... One Failure Passed\n")
 }
+
 
 func TestManyFailures(t *testing.T) {
 	fmt.Printf("Test: One ManyFailures mapreduce ...\n")

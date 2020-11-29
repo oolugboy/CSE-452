@@ -65,7 +65,11 @@ type MapReduce struct {
 	// Slice of registered workers that might be more efficient
 	WorkerInfoArray []*WorkerInfo
 
-	// add any additional state here
+	mapJobsDone				  int
+	reduceJobsDone			  int
+
+	JobDoneChannel			  chan bool
+	ReadyChannel			  chan int
 }
 
 func InitMapReduce(nmap int, nreduce int, file string, master string) *MapReduce {
@@ -80,6 +84,12 @@ func InitMapReduce(nmap int, nreduce int, file string, master string) *MapReduce
 	mr.WorkerInfoArray = make([]*WorkerInfo, 0)
 
 	// initialize any additional state here
+	mr.ReadyChannel = make(chan int)
+	mr.JobDoneChannel = make(chan bool)
+
+	mr.mapJobsDone = 0
+	mr.reduceJobsDone = 0
+
 	return mr
 }
 

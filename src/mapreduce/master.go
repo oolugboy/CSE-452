@@ -6,9 +6,6 @@ import "fmt"
 type WorkerInfo struct {
 	address string
 	// You can add definitions here.
-	jobStarted bool
-	jobArgs DoJobArgs
-	jobReply DoJobReply
 }
 
 // Clean up all workers by sending a Shutdown RPC to each one of them Collect
@@ -29,92 +26,69 @@ func (mr *MapReduce) KillWorkers() *list.List {
 	return l
 }
 
-func (mr * MapReduce) ResetWorkerInfoJobArgs(workerInfo * WorkerInfo) {
-	(*workerInfo).jobStarted = false
-	(*workerInfo).jobReply = DoJobReply{ OK: false	}
+func (mr *MapReduce) SendJobToWorker(jobArgs * DoJobArgs, jobReply * DoJobReply, workerAddress string) bool {
+	return rpcCall(workerAddress,"Worker.DoJob", jobArgs, jobReply)
 }
 
-func (mr * MapReduce) SetJobArgs(workerInfo * WorkerInfo, jobNumber int, jobType JobType) {
-	if jobType == Map {
-		(*workerInfo).jobArgs = DoJobArgs{mr.file,Map,jobNumber,mr.nReduce}
-	} else {
-		(*workerInfo).jobArgs = DoJobArgs{mr.file,Reduce,jobNumber,mr.nMap}
+func (mr *MapReduce) WaitOnWorkerToCompleteJob(jobReply * DoJobReply) {
+	for !(*jobReply).OK {}
+	return
+}
+
+func (mr *MapReduce) RegisterWorkers() {
+	newWorkerIndex := 0
+	for {
+		workerSocketDomainName := <- mr.workerRegistrationChannel
+		mr.WorkerInfoArray = append(mr.WorkerInfoArray, &WorkerInfo{address: workerSocketDomainName})
+		mr.ReadyChannel <- newWorkerIndex
+		newWorkerIndex++
 	}
 }
 
-func (mr *MapReduce) SendJobToWorker(workerInfo * WorkerInfo) {
-	rpcCall(workerInfo.address,	"Worker.DoJob", &(*workerInfo).jobArgs, &(*workerInfo).jobReply)
+func (mr * MapReduce) RunJobOnWorker(jobArgs DoJobArgs, jobReply DoJobReply, workerInfo * WorkerInfo) {
+	successfullySentJobToWorker := mr.SendJobToWorker(&jobArgs, &jobReply, (*workerInfo).address)
+	if successfullySentJobToWorker {
+		mr.WaitOnWorkerToCompleteJob(&jobReply)
+	} else {
+		go mr.RunJob(jobArgs.JobNumber, jobArgs.Operation)
+	}
+}
+
+func (mr * MapReduce) RunJob(jobNumber int, jobType JobType) {
+	indexOfNextReadyWorker:= <- mr.ReadyChannel
+	readyWorker := mr.WorkerInfoArray[indexOfNextReadyWorker]
+
+	jobArgs := DoJobArgs{}
+	if jobType == Map {
+		jobArgs = DoJobArgs{mr.file, Map, jobNumber,mr.nReduce}
+	} else {
+		jobArgs = DoJobArgs{mr.file, Reduce, jobNumber, mr.nMap}
+	}
+	jobReply := DoJobReply{}
+	mr.RunJobOnWorker(jobArgs, jobReply, readyWorker)
+	mr.JobDoneChannel <- true
+	mr.ReadyChannel <- indexOfNextReadyWorker
 }
 
 func (mr *MapReduce) RunMaster() *list.List {
-	mapJobsCount := 0
-	mapJobsCompleted := 0
-	mapDone := false
+	go mr.RegisterWorkers()
 
-	reduceJobsCount := 0
-	reduceJobsCompleted := 0
-	reduceDone := false
-
-	for mr.alive {
-		select {
-		case workerSocketDomainName := <- mr.workerRegistrationChannel:
-			mr.WorkerInfoArray = append(
-				mr.WorkerInfoArray,
-				&WorkerInfo{
-					address: workerSocketDomainName,
-					jobStarted: false,
-					jobArgs: DoJobArgs{},
-					jobReply: DoJobReply{},
-				})
-		default:
-		}
-
-		if mapDone == false {
-			for i := 0; i < len(mr.WorkerInfoArray); i++ {
-				currentWorkerInfo := mr.WorkerInfoArray[i]
-				if mapJobsCount < mr.nMap {
-					if (*currentWorkerInfo).jobStarted == false {
-						mr.SetJobArgs(currentWorkerInfo, mapJobsCount, Map)
-						go mr.SendJobToWorker(currentWorkerInfo)
-						(*currentWorkerInfo).jobStarted = true
-						mapJobsCount++
-					}
-				}
-				if (*currentWorkerInfo).jobReply.OK == true {
-					mapJobsCompleted++
-					mr.ResetWorkerInfoJobArgs(currentWorkerInfo)
-				}
-				if mapJobsCompleted == mr.nMap {
-					mapDone = true
-				}
-			}
-		}
-
-		if mapDone == true && reduceDone == false {
-			for i := 0; i < len(mr.WorkerInfoArray); i++ {
-				currentWorkerInfo := mr.WorkerInfoArray[i]
-				if reduceJobsCount < mr.nReduce {
-					if (*currentWorkerInfo).jobStarted == false {
-						mr.SetJobArgs(currentWorkerInfo, reduceJobsCount, Reduce)
-						go mr.SendJobToWorker(currentWorkerInfo)
-						(*currentWorkerInfo).jobStarted = true
-						reduceJobsCount++
-					}
-				}
-				if (*currentWorkerInfo).jobReply.OK == true {
-					reduceJobsCompleted++
-					mr.ResetWorkerInfoJobArgs(currentWorkerInfo)
-				}
-				if reduceJobsCompleted == mr.nReduce {
-					reduceDone = true
-				}
-			}
-		}
-
-		if reduceDone {
-			mr.alive = false
-		}
+	for i := 0; i < mr.nMap; i++ {
+		go mr.RunJob(i, Map)
 	}
 
+	for i := 0; i < mr.nMap; i++ {
+		<- mr.JobDoneChannel
+	}
+
+	for i := 0; i < mr.nReduce; i++ {
+		go mr.RunJob(i, Reduce)
+	}
+	for i := 0; i < mr.nReduce; i++ {
+		<- mr.JobDoneChannel
+	}
+
+	mr.Merge()
+	mr.DoneChannel <- true
 	return mr.KillWorkers()
 }
