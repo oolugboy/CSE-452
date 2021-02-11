@@ -15,25 +15,45 @@ type ViewServer struct {
 	me   string
 
 	// Your declarations here.
+	currentView View
+	primaryViewNumber uint
+	primaryClientAddr string
+	lastPrimaryPing time.Time
+	secondaryClientAddr string
+	lastSecondaryPing time.Time
 }
 
 //
 // server Ping RPC handler.
 //
 func (vs *ViewServer) Ping(args *PingArgs, reply *PingReply) error {
-
 	// Your code here.
+	if vs.currentView.Viewnum == 0 {
+		vs.primaryClientAddr = args.Me
+		vs.currentView = View{1, args.Me, ""}
+	} else {
+		if args.Me == vs.primaryClientAddr {
+			vs.primaryViewNumber = args.Viewnum
+			vs.primaryClientAddr = args.Me
+			vs.UpdateView()
+			reply.View = vs.currentView
+		} else {
 
+		}
+	}
 	return nil
+}
+
+func (vs *ViewServer) UpdateView() {
+
 }
 
 //
 // server Get() RPC handler.
 //
 func (vs *ViewServer) Get(args *GetArgs, reply *GetReply) error {
-
 	// Your code here.
-
+	reply.View = vs.currentView
 	return nil
 }
 
@@ -43,7 +63,6 @@ func (vs *ViewServer) Get(args *GetArgs, reply *GetReply) error {
 // accordingly.
 //
 func (vs *ViewServer) tick() {
-
 	// Your code here.
 }
 
@@ -61,6 +80,10 @@ func StartServer(me string) *ViewServer {
 	vs := new(ViewServer)
 	vs.me = me
 	// Your vs.* initializations here.
+	vs.currentView = View{0, "", ""}
+	vs.primaryViewNumber = 0
+	vs.primaryClientAddr = ""
+	vs.secondaryClientAddr = ""
 
 	// tell net/rpc about our RPC server and handlers.
 	rpcs := rpc.NewServer()
